@@ -1,0 +1,363 @@
+---
+openapi: 3.1.0
+tags:
+- name: Demo data
+  description: Timefold-provided demo employee schedule data.
+- name: Employee Schedules
+  description: Employee Schedules service for assigning employees to shifts.
+components:
+  schemas:
+    ConstraintJustification:
+      type: object
+    ConstraintRef:
+      type: object
+      properties:
+        packageName:
+          type: string
+        constraintName:
+          type: string
+        constraintId:
+          type: string
+    DemoData:
+      type: string
+      enum:
+      - SMALL
+      - LARGE
+    Employee:
+      type: object
+      properties:
+        name:
+          type: string
+        skills:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        unavailableDates:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: date
+            examples:
+            - 2022-03-10
+        undesiredDates:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: date
+            examples:
+            - 2022-03-10
+        desiredDates:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: date
+            examples:
+            - 2022-03-10
+    EmployeeSchedule:
+      type: object
+      properties:
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/Employee"
+        shifts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Shift"
+        score:
+          $ref: "#/components/schemas/HardSoftBigDecimalScore"
+        solverStatus:
+          $ref: "#/components/schemas/SolverStatus"
+    ErrorInfo:
+      type: object
+      properties:
+        jobId:
+          type: string
+        message:
+          type: string
+    HardSoftBigDecimalScore:
+      type: object
+      properties:
+        zero:
+          type: boolean
+        solutionInitialized:
+          type: boolean
+        initScore:
+          type: integer
+          format: int32
+        hardScore:
+          type: number
+        softScore:
+          type: number
+        feasible:
+          type: boolean
+    LocalDateTime:
+      type: string
+      format: date-time
+      examples:
+      - 2022-03-10T12:15:50
+    Score:
+      type: object
+      properties:
+        initScore:
+          type: integer
+          deprecated: true
+          format: int32
+        zero:
+          type: boolean
+        solutionInitialized:
+          type: boolean
+        feasible:
+          type: boolean
+    ScoreAnalysis:
+      type: object
+      properties:
+        score:
+          $ref: "#/components/schemas/Score"
+        constraintMap:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              constraintRef:
+                $ref: "#/components/schemas/ConstraintRef"
+              weight:
+                $ref: "#/components/schemas/Score"
+              score:
+                $ref: "#/components/schemas/Score"
+              matches:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    constraintRef:
+                      $ref: "#/components/schemas/ConstraintRef"
+                    score:
+                      $ref: "#/components/schemas/Score"
+                    justification:
+                      $ref: "#/components/schemas/ConstraintJustification"
+              matchCount:
+                type: integer
+                format: int32
+        solutionInitialized:
+          type: boolean
+    ScoreAnalysisFetchPolicy:
+      type: string
+      enum:
+      - FETCH_ALL
+      - FETCH_SHALLOW
+      - FETCH_MATCH_COUNT
+    Shift:
+      type: object
+      properties:
+        id:
+          type: string
+        start:
+          $ref: "#/components/schemas/LocalDateTime"
+        end:
+          $ref: "#/components/schemas/LocalDateTime"
+        location:
+          type: string
+        requiredSkill:
+          type: string
+        employee:
+          $ref: "#/components/schemas/Employee"
+    SolverStatus:
+      type: string
+      enum:
+      - SOLVING_SCHEDULED
+      - SOLVING_ACTIVE
+      - NOT_SOLVING
+paths:
+  /demo-data:
+    get:
+      summary: List demo data.
+      tags:
+      - Demo data
+      responses:
+        "200":
+          description: List of demo data represented as IDs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DemoData"
+  /demo-data/{demoDataId}:
+    get:
+      summary: Find an unsolved demo schedule by ID.
+      tags:
+      - Demo data
+      parameters:
+      - name: demoDataId
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/DemoData"
+      responses:
+        "200":
+          description: Unsolved demo schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeSchedule"
+  /schedules:
+    post:
+      summary: Submit a schedule to start solving as soon as CPU resources are available.
+      tags:
+      - Employee Schedules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeSchedule"
+        required: true
+      responses:
+        "202":
+          description: The job ID. Use that ID to get the solution with the other
+            methods.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+    get:
+      summary: List the job IDs of all submitted schedules.
+      tags:
+      - Employee Schedules
+      responses:
+        "200":
+          description: List of all job IDs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /schedules/analyze:
+    put:
+      summary: Submit a schedule to analyze its score.
+      tags:
+      - Employee Schedules
+      parameters:
+      - name: fetchPolicy
+        in: query
+        schema:
+          $ref: "#/components/schemas/ScoreAnalysisFetchPolicy"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeSchedule"
+        required: true
+      responses:
+        "202":
+          description: "Resulting score analysis, optionally without constraint matches."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreAnalysis"
+        "400":
+          description: Bad Request
+  /schedules/{jobId}:
+    delete:
+      summary: "Terminate solving for a given job ID. Returns the best solution of\
+        \ the schedule so far, as it might still be running or not even started."
+      tags:
+      - Employee Schedules
+      parameters:
+      - description: The job ID returned by the POST method.
+        name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The best solution of the schedule so far.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeSchedule"
+        "404":
+          description: No schedule found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+        "500":
+          description: Exception during solving a schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+    get:
+      summary: "Get the solution and score for a given job ID. This is the best solution\
+        \ so far, as it might still be running or not even started."
+      tags:
+      - Employee Schedules
+      parameters:
+      - description: The job ID returned by the POST method.
+        name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The best solution of the schedule so far.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeSchedule"
+        "404":
+          description: No schedule found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+        "500":
+          description: Exception during solving a schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+  /schedules/{jobId}/status:
+    get:
+      summary: Get the schedule status and score for a given job ID.
+      tags:
+      - Employee Schedules
+      parameters:
+      - description: The job ID returned by the POST method.
+        name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The schedule status and the best score so far.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeSchedule"
+        "404":
+          description: No schedule found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+        "500":
+          description: Exception during solving a schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorInfo"
+info:
+  title: employee-scheduling API
+  version: 1.0-SNAPSHOT
